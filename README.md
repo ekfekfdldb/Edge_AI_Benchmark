@@ -22,6 +22,7 @@ EDGE COMPUTING BENCHMARKS/
 ├── videos/
 │   └── example.mp4         # 벤치마크 테스트용 영상
 ├── Jetson.py               # NVIDIA Jetson 실행 스크립트
+├── Jetson_Universal.py     # NVIDIA Jetson 실행 스크립트 (TensorRT 기반)
 └── Raspberry_Pi.py         # Raspberry Pi 5 실행 스크립트
 ```
 
@@ -31,7 +32,7 @@ EDGE COMPUTING BENCHMARKS/
 
 각 하드웨어 환경에 맞는 필수 라이브러리를 설치해야 합니다.
 
-### 1. Common (공통)
+### 1. Common
 두 플랫폼 모두 아래 라이브러리가 필요합니다.
 
 ```bash
@@ -44,6 +45,7 @@ pip install psutil pandas opencv-python
 
 ```bash
 pip install jetson-stats ultralytics
+pip install jetson-stats pycuda #TensorRT
 ```
 
 ### 3. Raspberry Pi 5
@@ -63,6 +65,7 @@ pip install hailo-platform
 ### Run on Jetson Orin Nano
 ```bash
 python3 Jetson.py --model models/example.engine --video videos/example.mp4
+python3 Jetson_Universal.py --model models/yolop.engine --video videos/test.mp4 #TensorRT
 ```
 
 ### Run on Raspberry Pi 5
