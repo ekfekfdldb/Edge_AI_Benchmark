@@ -72,7 +72,7 @@ python3 Raspberry_Pi.py --model models/example.hef --video videos/example.mp4
 
 ---
 
-## 📊 Output Data (CSV Log)
+## Output Data (CSV Log)
 
 벤치마크 결과는 `logs/` 폴더에 CSV 파일로 자동 저장됩니다.
 
