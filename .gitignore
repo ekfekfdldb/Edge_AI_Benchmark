@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+.vscode/
+
+.DS_Store
+Thumbs.db
+
+output_videos/
+
+logs/
+
+
+result_*.mp4
+*.csv

@@ -15,15 +15,16 @@ EDGE COMPUTING BENCHMARKS/
 ├── common/
 │   ├── __init__.py         # 패키지 초기화
 │   └── logger.py           # 성능 측정 및 데이터 로깅 모듈
-├── logs/                   # 벤치마크 결과(CSV) 자동 저장 경로
+├── logs/                   # [Output] 벤치마크 결과(CSV) 자동 저장 경로
+├── output_videos/          # [Output] 시각화 결과 영상(.mp4) 저장 경로
 ├── models/
-│   ├── example.engine      # [Jetson] TensorRT 변환 모델
-│   └── example.hef         # [RPi 5] Hailo 컴파일 모델
+│   ├── yolop.engine        # [Jetson] TensorRT 변환 모델
+│   └── yolop.hef           # [RPi 5] Hailo 컴파일 모델
 ├── videos/
-│   └── example.mp4         # 벤치마크 테스트용 영상
-├── Jetson.py               # NVIDIA Jetson 실행 스크립트
-├── Jetson_Universal.py     # NVIDIA Jetson 실행 스크립트 (TensorRT 기반)
-└── Raspberry_Pi.py         # Raspberry Pi 5 실행 스크립트
+│   └── test.mp4            # 벤치마크 테스트용 원본 영상
+├── Jetson_Universal.py     # [Benchmark] Jetson 성능 측정용 (TensorRT 기반)
+├── Jetson_Vis.py           # [Visualization] 결과 검증 및 영상 저장용
+└── Raspberry_Pi.py         # [Benchmark] Raspberry Pi 5 실행 스크립트
 ```
 
 ---
@@ -65,7 +66,8 @@ pip install hailo-platform
 ### Run on Jetson Orin Nano
 ```bash
 python3 Jetson.py --model models/example.engine --video videos/example.mp4
-python3 Jetson_Universal.py --model models/yolop.engine --video videos/test.mp4 #TensorRT
+python3 -u Jetson_Universal.py --model models/yolop.engine --video videos/test.mp4 #TensorRT
+python3 Jetson_Vis.py --model models/yolop.engine --video videos/test.mp4 #검증 영상
 ```
 
 ### Run on Raspberry Pi 5
