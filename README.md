@@ -83,11 +83,13 @@ python3 Raspberry_Pi.py --model models/example.hef --video videos/example.mp4
 
 | Column Name | Description | Note |
 | :--- | :--- | :--- |
-| **Frame_ID** | 프레임 순서 | - |
-| **Timestamp** | 기록 시간 | - |
-| **E2E_Latency_ms** | 전체 지연 시간 | 전처리 + 추론 + 후처리 |
-| **Inference_Time_ms** | 연산 시간 | NPU/GPU 순수 추론 시간 |
-| **CPU_Usage_%** | CPU 사용률 | 시스템 전체 부하 |
-| **Memory_Usage_%** | 메모리 사용률 | RAM 사용량 |
-| **Chip_Temp_C** | 칩셋 온도 | Jetson(GPU) / RPi(SoC) |
-| **Power_W** | 소비 전력 | Jetson(센서 측정) / RPi(0.0 표기) |
+| **Frame_ID** | 프레임 번호 | - |
+| **Timestamp** | 기록 시간 | ms 단위 포함 |
+| **FPS** | 초당 프레임 수 | 성능의 핵심 지표 (높을수록 좋음) |
+| **E2E_Latency_ms** | 전체 지연 시간 | (낮을수록 좋음) |
+| **Inference_Time_ms** | 순수 AI 연산 시간 | (낮을수록 좋음) |
+| **CPU_Freq_MHz** | CPU 클럭 속도 | 쓰로틀링(성능저하) 감지용 |
+| **CPU_Usage_%** | CPU 사용률 | - |
+| **GPU_Usage_%** | GPU 사용률 | - |
+| **Memory_Usage_%** | RAM 사용률 | - |
+| **Temperature_C** | 칩셋 온도 | - |

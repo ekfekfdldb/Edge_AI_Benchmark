@@ -6,14 +6,13 @@ import os
 import numpy as np
 import csv
 from datetime import datetime
-import psutil  
+import psutil
 
 try:
     import tensorrt as trt
     import pycuda.driver as cuda
     import pycuda.autoinit
 except ImportError:
-    print("\n[CRITICAL] PyCUDA 또는 TensorRT가 설치되지 않았습니다.")
     sys.exit(1)
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
@@ -33,6 +32,22 @@ def get_system_temp():
                 continue
     return -1
 
+def get_gpu_load():
+    gpu_load_paths = [
+        "/sys/devices/platform/17000000.gpu/load",
+        "/sys/devices/gpu.0/load",
+        "/sys/devices/17000000.gpu/load"
+    ]
+    for path in gpu_load_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    val = int(f.read().strip())
+                    return val / 10.0
+            except:
+                continue
+    return 0.0
+
 class StandaloneLogger:
     def __init__(self, model_path, video_path):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -46,20 +61,19 @@ class StandaloneLogger:
         self.writer = csv.writer(self.file)
         
         self.writer.writerow([
-            'Frame_ID', 'Timestamp', 'Latency_ms', 'CPU_Usage_%', 
-            'Memory_Usage_%', 'Temperature_C', 'Model', 'Video'
+            'Frame_ID', 'Timestamp', 'FPS', 'E2E_Latency_ms', 'Inference_Time_ms',
+            'CPU_Usage_%', 'CPU_Freq_MHz', 'Memory_Usage_%', 'GPU_Usage_%', 'Temperature_C', 'Model'
         ])
-        print(f"[INFO] 로그 파일 생성됨: {self.filename}")
+        print(f"[INFO] Log file created: {self.filename}")
 
-    def log(self, frame_id, latency, temp, model, video):
-        # [수정됨] 추가 데이터 수집
+    def log(self, frame_id, fps, e2e_latency, inf_time, cpu_freq, temp, gpu_usage, model):
         now_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         cpu_usage = psutil.cpu_percent(interval=None)
         mem_usage = psutil.virtual_memory().percent
         
         self.writer.writerow([
-            frame_id, now_time, latency, cpu_usage, 
-            mem_usage, temp, model, video
+            frame_id, now_time, f"{fps:.2f}", e2e_latency, inf_time,
+            cpu_usage, f"{cpu_freq:.1f}", mem_usage, gpu_usage, temp, model
         ])
         self.file.flush()
 
@@ -75,8 +89,7 @@ class TRTWrapper:
         try:
             with open(engine_path, "rb") as f:
                 self.engine = self.runtime.deserialize_cuda_engine(f.read())
-        except Exception as e:
-            print(f"[CRITICAL] 엔진 로드 에러: {e}")
+        except Exception:
             sys.exit(1)
         
         self.context = self.engine.create_execution_context()
@@ -109,26 +122,23 @@ class TRTWrapper:
             cuda.memcpy_dtoh_async(out['host'], out['device'], self.stream)
         self.stream.synchronize()
 
-
 def run_experiment(model_path, video_path):
     if not os.path.exists(model_path) or not os.path.exists(video_path):
         sys.exit(1)
 
-    print(f"[INFO] 엔진 로딩 중... {model_path}")
+    print(f"[INFO] Load Engine: {model_path}")
     trt_wrapper = TRTWrapper(model_path)
     
     cap = cv2.VideoCapture(video_path)
     logger = StandaloneLogger(model_path, video_path)
 
-    print("[SYSTEM] 온도 센서 확인 중...", end="", flush=True)
-    for _ in range(30):
-        if get_system_temp() > 0:
-            print(" [OK]")
-            break
+    print("[SYSTEM] Stabilizing...", end="", flush=True)
+    for _ in range(5): 
         time.sleep(1)
         print(".", end="", flush=True)
+    print(" [OK]")
 
-    print(f"[INFO] >>> 실험 시작 (종료: Ctrl+C) <<<")
+    print(f"[INFO] Start.")
     frame_id = 0
 
     try:
@@ -136,29 +146,42 @@ def run_experiment(model_path, video_path):
             ret, frame = cap.read()
             if not ret: break
 
+            t_start_e2e = time.perf_counter_ns()
+
             resized = cv2.resize(frame, (640, 384))
             input_data = (resized.astype(np.float32) / 255.0).transpose(2, 0, 1)
             input_data = np.expand_dims(input_data, axis=0)
 
-            t0 = time.perf_counter_ns()
+            t_start_inf = time.perf_counter_ns()
             trt_wrapper.infer(input_data)
-            t1 = time.perf_counter_ns()
+            t_end_inf = time.perf_counter_ns()
+            t_end_e2e = time.perf_counter_ns()
             
-            latency = (t1 - t0) / 1_000_000.0
+            inf_time = (t_end_inf - t_start_inf) / 1_000_000.0
+            e2e_latency = (t_end_e2e - t_start_e2e) / 1_000_000.0
+            
+            fps = 1000.0 / e2e_latency if e2e_latency > 0 else 0
+            
             temp = get_system_temp()
+            gpu_load = get_gpu_load()
+            
+            try:
+                cpu_freq = psutil.cpu_freq().current
+            except:
+                cpu_freq = 0
 
-            logger.log(frame_id, latency, temp, model_path, video_path)
+            logger.log(frame_id, fps, e2e_latency, inf_time, cpu_freq, temp, gpu_load, model_path)
 
             if frame_id % 100 == 0:
-                print(f"[{frame_id} Frame] Latency: {latency:.2f}ms | Temp: {temp}C", flush=True)
+                print(f"[{frame_id}] FPS:{fps:.1f} | Latency:{e2e_latency:.1f}ms | GPU:{gpu_load}% | Temp:{temp}C", flush=True)
             frame_id += 1
 
     except KeyboardInterrupt:
-        print("\n[INFO] 사용자 중단.")
+        pass
     finally:
         cap.release()
         logger.close()
-        print("[INFO] 저장 완료.")
+        print("[INFO] Done.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
