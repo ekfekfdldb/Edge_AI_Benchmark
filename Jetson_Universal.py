@@ -6,38 +6,32 @@ import os
 import numpy as np
 import csv
 from datetime import datetime
+import psutil  
 
 try:
     import tensorrt as trt
     import pycuda.driver as cuda
     import pycuda.autoinit
-except ImportError as e:
+except ImportError:
     print("\n[CRITICAL] PyCUDA 또는 TensorRT가 설치되지 않았습니다.")
     sys.exit(1)
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
 def get_system_temp():
-    """
-    리눅스 시스템 파일에서 열전대(Thermal Zone) 온도를 직접 읽습니다.
-    Orin Nano의 경우 보통 zone0가 CPU/SoC 온도입니다.
-    """
     zones = [
         "/sys/class/thermal/thermal_zone0/temp", 
         "/sys/class/thermal/thermal_zone1/temp", 
-        "/sys/class/thermal/thermal_zone2/temp"  
+        "/sys/class/thermal/thermal_zone2/temp"
     ]
-    
     for zone in zones:
         if os.path.exists(zone):
             try:
                 with open(zone, "r") as f:
-                    temp_str = f.read().strip()
-                    return int(temp_str) / 1000.0
+                    return int(f.read().strip()) / 1000.0
             except:
                 continue
-    return -1 
-
+    return -1
 
 class StandaloneLogger:
     def __init__(self, model_path, video_path):
@@ -48,16 +42,26 @@ class StandaloneLogger:
             os.makedirs("logs")
             
         self.filename = f"logs/{timestamp}_Jetson_{model_name}.csv"
-        
         self.file = open(self.filename, 'w', newline='')
         self.writer = csv.writer(self.file)
         
-        self.writer.writerow(['Frame_ID', 'Latency_ms', 'Temperature_C', 'Model', 'Video'])
+        self.writer.writerow([
+            'Frame_ID', 'Timestamp', 'Latency_ms', 'CPU_Usage_%', 
+            'Memory_Usage_%', 'Temperature_C', 'Model', 'Video'
+        ])
         print(f"[INFO] 로그 파일 생성됨: {self.filename}")
 
     def log(self, frame_id, latency, temp, model, video):
-        self.writer.writerow([frame_id, latency, temp, model, video])
-        self.file.flush() 
+        # [수정됨] 추가 데이터 수집
+        now_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        cpu_usage = psutil.cpu_percent(interval=None)
+        mem_usage = psutil.virtual_memory().percent
+        
+        self.writer.writerow([
+            frame_id, now_time, latency, cpu_usage, 
+            mem_usage, temp, model, video
+        ])
+        self.file.flush()
 
     def close(self):
         self.file.close()
@@ -105,34 +109,24 @@ class TRTWrapper:
             cuda.memcpy_dtoh_async(out['host'], out['device'], self.stream)
         self.stream.synchronize()
 
+
 def run_experiment(model_path, video_path):
     if not os.path.exists(model_path) or not os.path.exists(video_path):
-        print("[CRITICAL] 모델 또는 영상 파일이 없습니다.")
         sys.exit(1)
 
     print(f"[INFO] 엔진 로딩 중... {model_path}")
     trt_wrapper = TRTWrapper(model_path)
     
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print("[CRITICAL] 영상 열기 실패.")
-        sys.exit(1)
-
     logger = StandaloneLogger(model_path, video_path)
 
-    print("[SYSTEM] 시스템 온도 센서 확인 중...", end="", flush=True)
-    start_temp = 0
+    print("[SYSTEM] 온도 센서 확인 중...", end="", flush=True)
     for _ in range(30):
-        t = get_system_temp()
-        if t > 0:
-            start_temp = t
-            print(f" [OK] 시작 온도: {t}C")
+        if get_system_temp() > 0:
+            print(" [OK]")
             break
         time.sleep(1)
         print(".", end="", flush=True)
-    
-    if start_temp <= 0:
-        print("\n[WARNING] 온도를 읽을 수 없습니다. (-1로 기록됨)")
 
     print(f"[INFO] >>> 실험 시작 (종료: Ctrl+C) <<<")
     frame_id = 0
@@ -140,9 +134,7 @@ def run_experiment(model_path, video_path):
     try:
         while True:
             ret, frame = cap.read()
-            if not ret:
-                print("[INFO] 영상 종료.")
-                break
+            if not ret: break
 
             resized = cv2.resize(frame, (640, 384))
             input_data = (resized.astype(np.float32) / 255.0).transpose(2, 0, 1)
@@ -153,14 +145,12 @@ def run_experiment(model_path, video_path):
             t1 = time.perf_counter_ns()
             
             latency = (t1 - t0) / 1_000_000.0
+            temp = get_system_temp()
 
-            current_temp = get_system_temp()
-
-            logger.log(frame_id, latency, current_temp, model_path, video_path)
+            logger.log(frame_id, latency, temp, model_path, video_path)
 
             if frame_id % 100 == 0:
-                print(f"[{frame_id} Frame] Latency: {latency:.2f}ms | Temp: {current_temp}C", flush=True)
-
+                print(f"[{frame_id} Frame] Latency: {latency:.2f}ms | Temp: {temp}C", flush=True)
             frame_id += 1
 
     except KeyboardInterrupt:
