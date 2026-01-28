@@ -15,7 +15,6 @@ import pycuda.driver as cuda
 
 cuda.init()
 
-
 CUDA_CODE = r'''
 __global__ void preprocess(unsigned char* input, float* output,
                            int in_w, int in_h, int out_w, int out_h) {
